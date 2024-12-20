@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>記事本 登入</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module">
+        // 匯入 Firebase 套件
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-auth.js";
+
+        // Firebase 設定
+        const firebaseConfig = {
+            apiKey: "AIzaSyA7v7VmMAdf51esjw1Fd9vMhF6s-DEvFjk",
+            authDomain: "project1-5eac5.firebaseapp.com",
+            projectId: "project1-5eac5",
+            storageBucket: "project1-5eac5.appspot.com",
+            messagingSenderId: "30969455492",
+            appId: "1:30969455492:web:0dbd50f2cd96234b6cf3d1",
+        };
+
+        // 初始化 Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        // 建立 Google 登入提供者
+        const provider = new GoogleAuthProvider();
+
+        // Google 登入按鈕事件
+        document.getElementById("googleLogin").addEventListener("click", () => {
+            signInWithPopup(auth, provider)
+                .then((result) => {
+                    // 登入成功後直接跳轉到 note.html 頁面
+                    window.location.href = "note.html";
+                })
+                .catch((error) => {
+                    // 登入失敗處理
+                    console.error("登入失敗", error);
+                    alert("登入失敗：" + error.message);
+                });
+        });
+    </script>
+</head>
+
+<body>
+    <div class="container mt-5" style="width: 50%;">
+        <h1 class="text-center">記事本功能</h1>
+                <div class="text-center mt-4">
+            <button id="googleLogin" class="btn btn-danger w-100">
+                Sign in with Google
+            </button>
+        </div>
+    </div>
+</body>
+
+</html>

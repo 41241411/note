@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>記事本</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- 引入 Firebase SDK -->
+
+
+
+    <script type="module">
+        // Import Firebase SDK
+        import "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
+        import {
+            getDatabase,
+            ref,
+            set,
+            onValue,
+            remove,
+        } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
+        import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-auth.js";
+
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyA7v7VmMAdf51esjw1Fd9vMhF6s-DEvFjk",
+            authDomain: "project1-5eac5.firebaseapp.com",
+            databaseURL:
+                "https://project1-5eac5-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "project1-5eac5",
+            storageBucket: "project1-5eac5.appspot.com",
+            messagingSenderId: "30969455492",
+            appId: "1:30969455492:web:0dbd50f2cd96234b6cf3d1",
+        };
+        // 初始化 Firebase
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+        const auth = getAuth(app);
+
+        let currentEditId = null; // Store the current editing note ID
+        let userId = null; // Store the user ID
+
+        // Listen for user authentication state
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // 當使用者登入時，設定使用者 ID 並載入筆記
+                userId = user.uid;
+                loadNotes(); // 假設您有一個函式來載入筆記
+
+                // 取得使用者資料並顯示在 modal
+                const userAvatar = user.photoURL || 'default-avatar.jpg'; // 預設頭像
+                const userName = user.displayName || 'Unknown User'; // 預設名稱
+                const userEmail = user.email || 'No email provided'; // 預設電子郵件
+
+                // 更新 modal 的使用者資料
+                document.getElementById('userAvatar').src = userAvatar;
+                document.getElementById('userName').innerText = userName;
+                document.getElementById('userEmail').innerText = userEmail;
+            }
+        });
+
+
+        // DOM Elements
+        const showModalBtn = document.getElementById("showModalBtn");
+        const noteModal = new bootstrap.Modal(document.getElementById("noteModal"));
+        const noteTitle = document.getElementById("noteTitle");
+        const noteContent = document.getElementById("noteContent");
+        const saveNoteBtn = document.getElementById("saveNoteBtn");
+        const notesTable = document.getElementById("notesTable");
+
+        // Add or Edit Note
+        saveNoteBtn.addEventListener("click", () => {
+            const title = noteTitle.value.trim();
+            const content = noteContent.value.trim();
+
+            if (title === "" || content === "") {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Oops...',
+                    text: 'Please enter a title and content!',
+                }); return;
+            }
+
+            // Get reference to the note
+            const noteRef = currentEditId
+                ? ref(database, `notes/${userId}/note-${currentEditId}`)
+                : ref(database, `notes/${userId}/note-${generateNewId()}`);
+
+            // Handle createdAt only for new notes
+            const createdAt = currentEditId
+                ? null // Don't change createdAt for existing notes
+                : new Date().toISOString().split("T")[0]; // Set createdAt only for new notes
+
+            // Check that createdAt is always set (for new notes)
+            if (!createdAt && !currentEditId) {
+                console.error("createdAt value is undefined.");
+                return;
+            }
+
+            // Save the note data to Firebase
+            set(noteRef, {
+                id: currentEditId || generateNewId(),
+                title: title,
+                content: content,
+                createdAt: createdAt, // Add createdAt field
+            }).then(() => {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Note saved successfully!',
+                    text: 'Your note has been saved.',
+                });
+            }).catch((error) => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error!',
+                    text: 'There was an error saving the note.',
+                });
+            });
+
+            // Reset for next operation
+            noteModal.hide();
+            currentEditId = null; // Clear editing state
+        });
+
+
+        // Generate a new ID for the note
+        function generateNewId() {
+            const notesRef = ref(database, `notes/${userId}`);
+            let maxId = 0;
+
+            onValue(notesRef, (snapshot) => {
+                const notesData = snapshot.val();
+                if (notesData) {
+                    const ids = Object.keys(notesData)
+                        .map((key) => parseInt(key.split("-")[1], 10)) // Extract IDs
+                        .filter((id) => !isNaN(id));
+                    maxId = ids.length > 0 ? Math.max(...ids) : 0;
+                }
+            }, { onlyOnce: true });
+
+            return maxId + 1;
+        }
+
+        // Load notes and display them in a table
+        function loadNotes() {
+            const notesRef = ref(database, `notes/${userId}`);
+            onValue(notesRef, (snapshot) => {
+                const notesData = snapshot.val();
+                renderNotesTable(notesData); // Render the notes in a table
+            });
+        }
+
+        // Render notes in the table
+        function renderNotesTable(notesData) {
+            notesTable.innerHTML = ""; // Clear the table
+
+            if (notesData) {
+                Object.keys(notesData).forEach((key) => {
+                    const note = notesData[key];
+
+                    if (note.id) {
+                        const row = document.createElement("tr");
+                        row.innerHTML = `
+                            <td>${note.id}</td>
+                            <td>${note.title}</td>
+                            <td class="hide-on-mobile">${note.content}</td>
+                            <td>${note.createdAt}</td>
+                            <td>
+                                <button class="btn btn-sm btn-warning edit-btn" data-id="${note.id}">Edit</button>
+                                <button class="btn btn-sm btn-danger delete-btn" data-id="${note.id}">Delete</button>
+                            </td>
+                        `;
+                        notesTable.appendChild(row);
+                    }
+                });
+
+                // Bind edit and delete buttons
+                document.querySelectorAll(".edit-btn").forEach((btn) => {
+                    btn.addEventListener("click", (e) => {
+                        const id = e.target.dataset.id;
+                        editNote(id);
+                    });
+                });
+
+                document.querySelectorAll(".delete-btn").forEach((btn) => {
+                    btn.addEventListener("click", (e) => {
+                        const id = e.target.dataset.id;
+                        deleteNote(id);
+                    });
+                });
+            } else {
+                notesTable.innerHTML = "<tr><td colspan='5'>No notes available</td></tr>";
+            }
+        }
+
+        // Edit a note
+        function editNote(id) {
+            const noteRef = ref(database, `notes/${userId}/note-${id}`);
+            onValue(noteRef, (snapshot) => {
+                const note = snapshot.val();
+                if (note) {
+                    currentEditId = note.id;
+                    noteTitle.value = note.title;
+                    noteContent.value = note.content;
+                    noteModalLabel.innerText = "Edit Note";
+                    noteModal.show();
+                }
+            }, { onlyOnce: true });
+        }
+
+        // Delete a note
+        function deleteNote(id) {
+            // 顯示確認刪除對話框
+            Swal.fire({
+                title: 'Are you sure?',
+                text: "Once deleted, you won't be able to recover this note!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, delete it!',
+                cancelButtonText: 'Cancel',
+            }).then((result) => {
+                // 如果用戶確認刪除
+                if (result.isConfirmed) {
+                    const noteRef = ref(database, `notes/${userId}/note-${id}`);
+                    remove(noteRef).then(() => {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Note deleted!',
+                            text: 'Your note has been deleted.',
+                        });
+                    }).catch((error) => {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error!',
+                            text: 'There was an error deleting the note.',
+                        });
+                    });
+                }
+            });
+        }
+
+
+        // Initial load
+        loadNotes();
+
+        const searchInput = document.getElementById("searchInput");
+
+        // Search functionality
+        searchInput.addEventListener("input", () => {
+            const query = searchInput.value.trim().toLowerCase();
+            const notesRef = ref(database, `notes/${userId}`);
+
+            onValue(notesRef, (snapshot) => {
+                const notesData = snapshot.val();
+                const filteredNotesData = {};
+
+                if (notesData) {
+                    Object.keys(notesData).forEach((key) => {
+                        const note = notesData[key];
+                        if (
+                            note.title.toLowerCase().includes(query) ||
+                            note.content.toLowerCase().includes(query)
+                        ) {
+                            filteredNotesData[key] = note;
+                        }
+                    });
+                    renderNotesTable(filteredNotesData);
+                }
+            });
+        });
+
+        // Open the modal to add a new note
+        function openAddModal() {
+            currentEditId = null;
+            noteTitle.value = "";
+            noteContent.value = "";
+            noteModalLabel.innerText = "Add New Note";
+            noteModal.show();
+        }
+
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            signOut(auth).then(() => {
+                userId = null;  // 清除使用者 ID
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Logged out successfully',
+                    text: 'You have logged out.',
+                }).then(() => {
+            window.location.href = 'login.html'; // 跳轉到 login.html
+        });
+            }).catch((error) => {
+                console.error("Logout failed: ", error);  // 打印錯誤信息
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Logout Failed',
+                    text: error.message,
+                });
+            });
+        });
+
+        // Bind showModalBtn event
+        document.getElementById("showModalBtn").addEventListener("click", function () {
+            openAddModal();
+        });
+
+        // 在Firebase初始化之後，新增這段代碼來綁定事件
+        document.getElementById("userIcon").addEventListener("click", function () {
+            // 顯示modal
+            new bootstrap.Modal(document.getElementById("userModal")).show();
+        });
+
+
+    </script>
+
+    <style>
+        /* 設置表格固定寬度 */
+        table {
+            width: 100%;
+            table-layout: fixed;
+            /* Forces the table to be responsive */
+        }
+
+        .table th,
+        .table td {
+            word-wrap: break-word;
+            word-break: break-all;
+        }
+
+        /* 隱藏小螢幕下的內容 */
+        .hide-on-mobile {
+            display: table-cell;
+        }
+
+        /* 手機端屏幕下顯示的字體大小 */
+        @media only screen and (max-width: 576px) {
+            .hide-on-mobile {
+                display: none;
+            }
+        }
+
+        #userIcon {
+            cursor: pointer;
+            font-size: 30px;
+            color: #000;
+        }
+
+        #userModal .modal-body {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            height: 200px;
+            /* 設置固定高度，根據需要調整 */
+        }
+
+        #userModal .modal-body-content {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #userAvatar {
+            width: 100px;
+            /* 設定頭像的寬度 */
+            height: 100px;
+            /* 設定頭像的高度 */
+            border-radius: 50%;
+            /* 使頭像顯示為圓形 */
+            object-fit: cover;
+            /* 保持圖片比例並填充容器 */
+            border: 2px solid #ddd;
+            /* 可選，設定圓框邊界的顏色 */
+        }
+
+        .modal-footer {
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container mt-5">
+
+        <div class="row mt-5">
+            <div class="col">
+                <h1>記事本</h1>
+            </div>
+            <div class="col">
+                <!-- User Icon Button -->
+                <div class="d-flex justify-content-end">
+                    <i id="userIcon" class="bi bi-person-circle"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Modal -->
+        <div class="modal fade" id="userModal" tabindex="-1" aria-labelledby="userModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="userModalLabel">User Information</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <img id="userAvatar" src="" alt="User Avatar">
+                        <h5 id="userName"></h5>
+                        <p id="userEmail"></p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" id="logoutBtn" class="btn btn-danger">Log Out</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row my-4">
+            <div class="col-md-6">
+                <input type="text" id="searchInput" class="form-control" placeholder="搜尋筆記" />
+            </div>
+            <div class="col-md-6 text-end">
+                <button id="showModalBtn" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#noteModal">
+                    add
+                </button>
+            </div>
+        </div>
+
+        <table class="table table-striped table-bordered">
+            <thead>
+                <tr>
+                    <th style="width: 10%;">ID</th>
+                    <th style="width: 30%;">標題</th>
+                    <th style="width: 30%;" class="hide-on-mobile">內容</th>
+                    <th>創建日期</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="notesTable"></tbody>
+        </table>
+
+        <div class="modal fade" id="noteModal" tabindex="-1" aria-labelledby="noteModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="noteModalLabel">新增筆記</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form>
+                            <div class="mb-3">
+                                <label for="noteTitle" class="form-label">標題</label>
+                                <input type="text" id="noteTitle" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <label for="noteContent" class="form-label">內容</label>
+                                <textarea id="noteContent" class="form-control"></textarea>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" id="saveNoteBtn" class="btn btn-primary">保存</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
