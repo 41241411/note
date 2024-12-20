@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>記事本功能</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module">
+        // Import Firebase SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
+        import {
+            getDatabase,
+            ref,
+            set,
+            onValue,
+            remove,
+        } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
+
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyA7v7VmMAdf51esjw1Fd9vMhF6s-DEvFjk",
+            authDomain: "project1-5eac5.firebaseapp.com",
+            databaseURL:
+                "https://project1-5eac5-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "project1-5eac5",
+            storageBucket: "project1-5eac5.appspot.com",
+            messagingSenderId: "30969455492",
+            appId: "1:30969455492:web:0dbd50f2cd96234b6cf3d1",
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+
+        // DOM Elements
+        const showModalBtn = document.getElementById("showModalBtn");
+        const noteModal = new bootstrap.Modal(
+            document.getElementById("noteModal")
+        );
+        const noteTitle = document.getElementById("noteTitle");
+        const noteContent = document.getElementById("noteContent");
+        const saveNoteBtn = document.getElementById("saveNoteBtn");
+        const notesTable = document.getElementById("notesTable");
+
+        let currentEditId = null; // 儲存當前編輯的 ID
+
+        // 新增或編輯筆記
+        saveNoteBtn.addEventListener("click", () => {
+            const title = noteTitle.value.trim();
+            const content = noteContent.value.trim();
+
+            if (title === "" || content === "") {
+                alert("請填寫標題和內容！");
+                return;
+            }
+
+            const noteRef = currentEditId
+                ? ref(database, `notes/${currentEditId}`)
+                : ref(database, `notes/${generateNewId()}`);
+
+            const createdAt = currentEditId
+                ? null // 編輯時不改變創建時間
+                : new Date().toISOString().split("T")[0]; // YYYY-MM-DD 格式
+
+            set(noteRef, {
+                id: currentEditId || generateNewId(),
+                title: title,
+                content: content,
+                createdAt: createdAt || undefined, // 如果是編輯，忽略此欄位
+            });
+
+            noteModal.hide();
+            currentEditId = null; // 清除編輯狀態
+        });
+
+        // 生成新 ID
+        function generateNewId() {
+            const notesRef = ref(database, "notes");
+            let maxId = 0;
+
+            onValue(notesRef, (snapshot) => {
+                const notesData = snapshot.val();
+                if (notesData) {
+                    const ids = Object.keys(notesData)
+                        .map((key) => parseInt(key, 10))
+                        .filter((id) => !isNaN(id));
+                    maxId = ids.length > 0 ? Math.max(...ids) : 0;
+                }
+            }, { onlyOnce: true });
+
+            return maxId + 1;
+        }
+
+        // 加載資料並顯示表格
+        function loadNotes() {
+            const notesRef = ref(database, "notes");
+            onValue(notesRef, (snapshot) => {
+                const notesData = snapshot.val();
+                renderNotesTable(notesData); // 顯示表格
+            });
+        }
+
+        // 顯示筆記表格
+        function renderNotesTable(notesData) {
+            notesTable.innerHTML = ""; // 清空表格
+
+            if (notesData) {
+                Object.keys(notesData).forEach((key) => {
+                    const note = notesData[key];
+                    const row = document.createElement("tr");
+
+                    row.innerHTML = `
+                    <td>${note.id}</td>
+                    <td>${note.title}</td>
+                    <td class="hide-on-mobile">${note.content}</td>
+                    <td>${note.createdAt}</td>
+                    <td>
+                        <button class="btn btn-sm btn-warning edit-btn" data-id="${note.id}">編輯</button>
+                        <button class="btn btn-sm btn-danger delete-btn" data-id="${note.id}">刪除</button>
+                    </td>
+                `;
+
+                    notesTable.appendChild(row);
+                });
+
+                // 綁定編輯和刪除按鈕
+                document.querySelectorAll(".edit-btn").forEach((btn) => {
+                    btn.addEventListener("click", (e) => {
+                        const id = e.target.dataset.id;
+                        editNote(id);
+                    });
+                });
+
+                document.querySelectorAll(".delete-btn").forEach((btn) => {
+                    btn.addEventListener("click", (e) => {
+                        const id = e.target.dataset.id;
+                        deleteNote(id);
+                    });
+                });
+            }
+        }
+
+        // 編輯筆記
+        function editNote(id) {
+            const noteRef = ref(database, `notes/${id}`);
+            onValue(noteRef, (snapshot) => {
+                const note = snapshot.val();
+                if (note) {
+                    currentEditId = note.id; // 設定當前編輯的 ID
+                    noteTitle.value = note.title;
+                    noteContent.value = note.content;
+                    noteModalLabel.innerText = "編輯筆記";
+                    noteModal.show();
+                }
+            }, { onlyOnce: true });
+        }
+
+        // 刪除筆記
+        function deleteNote(id) {
+            const noteRef = ref(database, `notes/${id}`);
+            remove(noteRef);
+        }
+
+        // 初始加載
+        loadNotes();
+
+        const searchInput = document.getElementById("searchInput");
+
+        // 搜尋功能
+        searchInput.addEventListener("input", () => {
+            const query = searchInput.value.trim().toLowerCase();
+            const notesRef = ref(database, "notes");
+
+            onValue(notesRef, (snapshot) => {
+                const notesData = snapshot.val();
+                const filteredNotesData = {};
+
+                if (notesData) {
+                    Object.keys(notesData).forEach((key) => {
+                        const note = notesData[key];
+                        if (
+                            note.title.toLowerCase().includes(query) ||
+                            note.content.toLowerCase().includes(query)
+                        ) {
+                            filteredNotesData[key] = note;
+                        }
+                    });
+                    renderNotesTable(filteredNotesData); // 顯示過濾後的表格
+                }
+            });
+        });
+
+        // 開啟新增筆記的 Modal
+        function openAddModal() {
+            currentEditId = null; // 清除編輯狀態
+            noteTitle.value = "";
+            noteContent.value = "";
+            noteModalLabel.innerText = "新增筆記";
+            noteModal.show(); // 顯示 Modal
+        }
+
+        // 綁定 showModalBtn 事件
+        document.getElementById("showModalBtn").addEventListener("click", function () {
+            openAddModal();
+        });
+    </script>
+    <style>
+        /* 設置表格固定寬度 */
+        table {
+            width: 100%;
+            table-layout: fixed;
+            /* Forces the table to be responsive */
+        }
+
+        .table th,
+        .table td {
+            word-wrap: break-word;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* 防止文字過長，超過時顯示省略號 */
+        .table td,
+        .table th {
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
+        /* 手機版隱藏「內容」欄位 */
+        @media (max-width: 767px) {
+            .hide-on-mobile {
+                display: none;
+            }
+
+            /* 手機版換行顯示操作欄按鈕 */
+            .table td .btn {
+                display: block;
+                /* 設置按鈕為塊級元素 */
+                width: 100%;
+                /* 讓按鈕佔滿整個欄位 */
+                margin-bottom: 5px;
+                /* 增加按鈕間的間距 */
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center">記事本功能</h1>
+        <div class="row my-5">
+            <div class="col-12 col-md-10">
+                <input id="searchInput" type="text" class="form-control mb-3" placeholder="搜尋筆記" />
+            </div>
+            <div class="col-12 col-md-2 text-end">
+                <button id="showModalBtn" class="btn btn-primary">新增筆記</button>
+            </div>
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th style="width: 10%;">ID</th>
+                        <th style="width: 30%;">標題</th>
+                        <th style="width: 30%;" class="hide-on-mobile">內容</th>
+                        <th>創建日期</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="notesTable"></tbody>
+            </table>
+
+            <!-- 筆記 Modal -->
+            <div class="modal fade" id="noteModal" tabindex="-1" aria-labelledby="noteModalLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 id="noteModalLabel" class="modal-title">新增筆記</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label for="noteTitle" class="form-label">標題</label>
+                                <input type="text" class="form-control" id="noteTitle" placeholder="請輸入標題" />
+                            </div>
+                            <div class="mb-3">
+                                <label for="noteContent" class="form-label">內容</label>
+                                <textarea class="form-control" id="noteContent" rows="4" placeholder="請輸入內容"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="saveNoteBtn" type="button" class="btn btn-primary">
+                                保存筆記
+                            </button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                關閉
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+</body>
+
+</html>
