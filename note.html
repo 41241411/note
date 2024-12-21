@@ -23,6 +23,7 @@
             set,
             onValue,
             remove,
+            push,
         } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
         import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-auth.js";
 
@@ -158,25 +159,29 @@
         }
 
         // Render notes in the table
+        // Render notes in the table
         function renderNotesTable(notesData) {
             notesTable.innerHTML = ""; // Clear the table
 
             if (notesData) {
-                Object.keys(notesData).forEach((key) => {
-                    const note = notesData[key];
+                // 將資料轉換為陣列並按 id 排序
+                const sortedNotes = Object.keys(notesData)
+                    .map((key) => notesData[key]) // 取得所有筆記的值
+                    .sort((a, b) => a.id - b.id); // 按照 id 從小到大排序
 
+                sortedNotes.forEach((note) => {
                     if (note.id) {
                         const row = document.createElement("tr");
                         row.innerHTML = `
-                            <td>${note.id}</td>
-                            <td>${note.title}</td>
-                            <td class="hide-on-mobile">${note.content}</td>
-                            <td>${note.createdAt}</td>
-                            <td>
-                                <button class="btn btn-sm btn-warning edit-btn" data-id="${note.id}">Edit</button>
-                                <button class="btn btn-sm btn-danger delete-btn" data-id="${note.id}">Delete</button>
-                            </td>
-                        `;
+                    <td>${note.id}</td>
+                    <td>${note.title}</td>
+                    <td class="hide-on-mobile">${note.content}</td>
+                    <td>${note.createdAt}</td>
+                    <td>
+                        <button class="btn btn-sm btn-warning edit-btn" data-id="${note.id}">Edit</button>
+                        <button class="btn btn-sm btn-danger delete-btn" data-id="${note.id}">Delete</button>
+                    </td>
+                `;
                         notesTable.appendChild(row);
                     }
                 });
@@ -293,8 +298,8 @@
                     title: 'Logged out successfully',
                     text: 'You have logged out.',
                 }).then(() => {
-            window.location.href = 'login.html'; // 跳轉到 login.html
-        });
+                    window.location.href = 'login.html'; // 跳轉到 login.html
+                });
             }).catch((error) => {
                 console.error("Logout failed: ", error);  // 打印錯誤信息
                 Swal.fire({
@@ -316,7 +321,52 @@
             new bootstrap.Modal(document.getElementById("userModal")).show();
         });
 
+        const chatContainer = document.getElementById("chatContainer");
+        const messageInput = document.getElementById("messageInput");
+        const sendMessageBtn = document.getElementById("sendMessageBtn");
 
+        // 發送訊息
+        sendMessageBtn.addEventListener("click", () => {
+            const message = messageInput.value.trim();
+            if (message === "") {
+                alert("請輸入訊息");
+                return;
+            }
+
+            const messagesRef = ref(database, "messages");
+            push(messagesRef, {
+                userId,
+                content: message,
+                timestamp: Date.now(),
+            }).then(() => {
+                messageInput.value = ""; // 清空輸入框
+            });
+        });
+
+        // 監聽訊息變化
+        const messagesRef = ref(database, "messages");
+        onValue(messagesRef, (snapshot) => {
+            chatContainer.innerHTML = ""; // 清空聊天內容
+
+            const messages = snapshot.val();
+            if (messages) {
+                Object.keys(messages).forEach((key) => {
+                    const message = messages[key];
+                    const messageDiv = document.createElement("div");
+                    const isSelf = message.userId === userId;
+
+                    messageDiv.className = `message ${isSelf ? "message-right" : "message-left"}`;
+                    messageDiv.innerHTML = `
+                        <div class="user-id">${message.userId}</div>
+                        <div>${message.content}</div>
+                    `;
+                    chatContainer.appendChild(messageDiv);
+                });
+
+                // 滾動到最新訊息
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        });
     </script>
 
     <style>
@@ -382,12 +432,50 @@
         .modal-footer {
             text-align: right;
         }
+
+        .chat-container {
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 15px;
+            background-color: #f8f9fa;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 60%;
+        }
+
+        .message-left {
+            background-color: #e9ecef;
+            align-self: flex-start;
+        }
+
+        .message-right {
+            background-color: #007bff;
+            color: white;
+            align-self: flex-end;
+        }
+
+        .message .user-id {
+            font-size: 12px;
+            font-weight: bold;
+        }
     </style>
 </head>
 
 <body>
     <div class="container mt-5">
-
+        <div class="my-5">
+            <h1 class="text-center">聊天室</h1>
+            <div id="chatContainer" class="chat-container d-flex flex-column"></div>
+            <div class="input-group">
+                <input type="text" id="messageInput" class="form-control" placeholder="輸入訊息">
+                <button id="sendMessageBtn" class="btn btn-primary">送出</button>
+            </div>
+        </div>
         <div class="row mt-5">
             <div class="col">
                 <h1>記事本</h1>
@@ -422,10 +510,10 @@
         </div>
 
         <div class="row my-4">
-            <div class="col-md-6">
+            <div class="col-md-10">
                 <input type="text" id="searchInput" class="form-control" placeholder="搜尋筆記" />
             </div>
-            <div class="col-md-6 text-end">
+            <div class="col-md-2 text-end">
                 <button id="showModalBtn" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#noteModal">
                     add
                 </button>
