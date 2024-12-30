@@ -179,10 +179,6 @@
             let fileData = null;
             let fileName = '';
 
-            if (file) {
-                fileName = file.name;  // 取得檔案名稱
-            }
-
             // Get reference to the note
             const noteRef = currentEditId
                 ? ref(database, `notes/${userId}/note-${currentEditId}`)
@@ -192,30 +188,67 @@
             taiwanTime.setHours(taiwanTime.getHours() + 8);  // 將時間調整為台灣時間 (UTC +8)
             const formattedTaiwanDate = taiwanTime.toISOString().split("T")[0];  // 只取年月日
 
-            const reader = new FileReader();
-            reader.readAsDataURL(fileInput.files[0]); // 將檔案轉為 Base64
-            reader.onload = function (e) {
-                fileData = e.target.result; // Base64 編碼內容
+            if (file) {
+                fileName = file.name;  // 取得檔案名稱
 
-                // Save the note data to Firebase
+                // 將檔案轉換為 Base64
+                const reader = new FileReader();
+                reader.readAsDataURL(file);  // 將檔案轉為 Base64
+                reader.onload = function (e) {
+                    fileData = e.target.result; // 取得 Base64 編碼內容
+
+                    // 儲存筆記資料到 Firebase
+                    set(noteRef, {
+                        id: currentEditId || generateNewId(),
+                        title: title,
+                        content: content,
+                        file: fileData,  // 儲存檔案的 Base64 編碼內容
+                        fileName: fileName,  // 儲存檔案名稱
+                        createdAt: formattedTaiwanDate, // 儲存 createdAt
+                    }).then(() => {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Note saved successfully!',
+                            text: 'Your note has been saved.',
+                        }).then(() => {
+                            noteModal.hide();
+                            // 可選擇重置表單欄位
+                            noteTitle.value = '';
+                            noteContent.value = '';
+                            fileInput.value = '';  // 重置檔案輸入欄位
+                        });
+                    }).catch((error) => {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error!',
+                            text: 'There was an error saving the note.',
+                        }).then(() => {
+                            noteModal.hide();
+                        });
+                    });
+
+                    // 重置編輯狀態
+                    currentEditId = null; // 清除編輯狀態
+                };
+            } else {
+                // 如果沒有選擇檔案，不儲存檔案
                 set(noteRef, {
                     id: currentEditId || generateNewId(),
                     title: title,
                     content: content,
-                    file: fileData, // 儲存檔案的 Base64 編碼內容
-                    fileName: fileName,  // 儲存檔案名稱
-                    createdAt: formattedTaiwanDate, // Add createdAt field
+                    fileName: fileName,  // 仍然儲存檔案名稱（即便檔案為空）
+                    createdAt: formattedTaiwanDate, // 儲存 createdAt
                 }).then(() => {
                     Swal.fire({
                         icon: 'success',
                         title: 'Note saved successfully!',
                         text: 'Your note has been saved.',
                     }).then(() => {
-                        noteModal.hide()
-                        // Optionally reset form fields
+                        noteModal.hide();
+                        // 可選擇重置表單欄位
                         noteTitle.value = '';
                         noteContent.value = '';
-                        fileInput.value = '';
+                        fileInput.value = '';  // 重置檔案輸入欄位
                     });
                 }).catch((error) => {
                     Swal.fire({
@@ -223,13 +256,13 @@
                         title: 'Error!',
                         text: 'There was an error saving the note.',
                     }).then(() => {
-                        noteModal.hide()
+                        noteModal.hide();
                     });
                 });
 
-                // Reset for next operation
-                currentEditId = null; // Clear editing state
-            };
+                // 重置編輯狀態
+                currentEditId = null; // 清除編輯狀態
+            }
         });
 
         const editNoteModal = new bootstrap.Modal(document.getElementById("editNoteModal"));
