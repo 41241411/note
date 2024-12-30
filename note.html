@@ -9,10 +9,11 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- 引入 jQuery 和 Bootstrap 的 JS -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+
     <!-- 引入 Firebase SDK -->
-
-
-
     <script type="module">
         // Import Firebase SDK
         import "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
@@ -21,6 +22,7 @@
             getDatabase,
             ref,
             set,
+            update,
             onValue,
             remove,
             push,
@@ -69,67 +71,10 @@
 
 
         // DOM Elements
-        const showModalBtn = document.getElementById("showModalBtn");
-        const noteModal = new bootstrap.Modal(document.getElementById("noteModal"));
         const noteTitle = document.getElementById("noteTitle");
         const noteContent = document.getElementById("noteContent");
         const saveNoteBtn = document.getElementById("saveNoteBtn");
         const notesTable = document.getElementById("notesTable");
-
-        // Add or Edit Note
-        saveNoteBtn.addEventListener("click", () => {
-            const title = noteTitle.value.trim();
-            const content = noteContent.value.trim();
-
-            if (title === "" || content === "") {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Oops...',
-                    text: 'Please enter a title and content!',
-                }); return;
-            }
-
-            // Get reference to the note
-            const noteRef = currentEditId
-                ? ref(database, `notes/${userId}/note-${currentEditId}`)
-                : ref(database, `notes/${userId}/note-${generateNewId()}`);
-
-            // Handle createdAt only for new notes
-            const createdAt = currentEditId
-                ? null // Don't change createdAt for existing notes
-                : new Date().toISOString().split("T")[0]; // Set createdAt only for new notes
-
-            // Check that createdAt is always set (for new notes)
-            if (!createdAt && !currentEditId) {
-                console.error("createdAt value is undefined.");
-                return;
-            }
-
-            // Save the note data to Firebase
-            set(noteRef, {
-                id: currentEditId || generateNewId(),
-                title: title,
-                content: content,
-                createdAt: createdAt, // Add createdAt field
-            }).then(() => {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Note saved successfully!',
-                    text: 'Your note has been saved.',
-                });
-            }).catch((error) => {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error!',
-                    text: 'There was an error saving the note.',
-                });
-            });
-
-            // Reset for next operation
-            noteModal.hide();
-            currentEditId = null; // Clear editing state
-        });
-
 
         // Generate a new ID for the note
         function generateNewId() {
@@ -159,7 +104,6 @@
         }
 
         // Render notes in the table
-        // Render notes in the table
         function renderNotesTable(notesData) {
             notesTable.innerHTML = ""; // Clear the table
 
@@ -172,13 +116,22 @@
                 sortedNotes.forEach((note) => {
                     if (note.id) {
                         const row = document.createElement("tr");
+                        const fileLink = note.fileName
+                            ? `<a href="${note.file}" download="${note.fileName}">${note.fileName}</a>`
+                            : "無檔案";
+
                         row.innerHTML = `
                     <td>${note.id}</td>
                     <td>${note.title}</td>
                     <td class="hide-on-mobile">${note.content}</td>
-                    <td>${note.createdAt}</td>
                     <td>
-                        <button class="btn btn-sm btn-warning edit-btn" data-id="${note.id}">Edit</button>
+                        ${note.createdAt}
+                        ${fileLink}
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-warning edit-btn" data-bs-toggle="modal" data-bs-target="#editNoteModal"data-id="${note.id}">
+                    Edit
+                </button>
                         <button class="btn btn-sm btn-danger delete-btn" data-id="${note.id}">Delete</button>
                     </td>
                 `;
@@ -186,7 +139,6 @@
                     }
                 });
 
-                // Bind edit and delete buttons
                 document.querySelectorAll(".edit-btn").forEach((btn) => {
                     btn.addEventListener("click", (e) => {
                         const id = e.target.dataset.id;
@@ -205,6 +157,83 @@
             }
         }
 
+        const noteModalElement = document.getElementById('noteModal');
+        const noteModal = new bootstrap.Modal(noteModalElement);
+
+
+        // Add Note
+        saveNoteBtn.addEventListener("click", () => {
+            const title = noteTitle.value.trim();
+            const content = noteContent.value.trim();
+            const fileInput = document.getElementById("noteFileInput");
+
+            if (title === "" || content === "") {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Oops...',
+                    text: 'Please enter a title and content!',
+                }); return;
+            }
+
+            const file = fileInput.files[0];  // 確保檔案存在
+            let fileData = null;
+            let fileName = '';
+
+            if (file) {
+                fileName = file.name;  // 取得檔案名稱
+            }
+
+            // Get reference to the note
+            const noteRef = currentEditId
+                ? ref(database, `notes/${userId}/note-${currentEditId}`)
+                : ref(database, `notes/${userId}/note-${generateNewId()}`);
+
+            const taiwanTime = new Date();
+            taiwanTime.setHours(taiwanTime.getHours() + 8);  // 將時間調整為台灣時間 (UTC +8)
+            const formattedTaiwanDate = taiwanTime.toISOString().split("T")[0];  // 只取年月日
+
+            const reader = new FileReader();
+            reader.readAsDataURL(fileInput.files[0]); // 將檔案轉為 Base64
+            reader.onload = function (e) {
+                fileData = e.target.result; // Base64 編碼內容
+
+                // Save the note data to Firebase
+                set(noteRef, {
+                    id: currentEditId || generateNewId(),
+                    title: title,
+                    content: content,
+                    file: fileData, // 儲存檔案的 Base64 編碼內容
+                    fileName: fileName,  // 儲存檔案名稱
+                    createdAt: formattedTaiwanDate, // Add createdAt field
+                }).then(() => {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Note saved successfully!',
+                        text: 'Your note has been saved.',
+                    }).then(() => {
+                        noteModal.hide()
+                        // Optionally reset form fields
+                        noteTitle.value = '';
+                        noteContent.value = '';
+                        fileInput.value = '';
+                    });
+                }).catch((error) => {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error!',
+                        text: 'There was an error saving the note.',
+                    }).then(() => {
+                        noteModal.hide()
+                    });
+                });
+
+                // Reset for next operation
+                currentEditId = null; // Clear editing state
+            };
+        });
+
+        const editNoteModal = new bootstrap.Modal(document.getElementById("editNoteModal"));
+
         // Edit a note
         function editNote(id) {
             const noteRef = ref(database, `notes/${userId}/note-${id}`);
@@ -212,13 +241,83 @@
                 const note = snapshot.val();
                 if (note) {
                     currentEditId = note.id;
-                    noteTitle.value = note.title;
-                    noteContent.value = note.content;
-                    noteModalLabel.innerText = "Edit Note";
-                    noteModal.show();
+                    const noteTitle = document.getElementById("editNoteTitle");
+                    const noteContent = document.getElementById("editNoteContent");
+
+                    // 如果資料存在，則顯示在對應欄位
+                    noteTitle.value = note.title || '';
+                    noteContent.value = note.content || '';
+
+                    const fileLink = note.fileName || ''; // 假設資料庫中有 fileLink 屬性
+                    if (fileLink) {
+                        fileInfo.innerHTML = `<p>檔案名稱：${fileLink}</p>`;
+                    } else {
+                        fileInfo.innerHTML = "<p>無檔案連結</p>";
+                    }
+
+                    // 顯示編輯模態框
+                    editNoteModal.show();
                 }
             }, { onlyOnce: true });
         }
+
+        const updateNoteBtn = document.getElementById("updateNoteBtn");
+
+        updateNoteBtn.addEventListener("click", () => {
+            const title = document.getElementById("editNoteTitle").value.trim();
+            const content = document.getElementById("editNoteContent").value.trim();
+            const fileInput = document.getElementById("noteFileInput");
+
+
+            // 檢查標題和內容是否為空
+            if (title === "" || content === "") {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Oops...',
+                    text: 'Please enter a title and content!',
+                });
+                return;
+            }
+
+            // 取得筆記資料的 Firebase 路徑
+            const noteRef = ref(database, `notes/${userId}/note-${currentEditId}`);
+
+            const taiwanTime = new Date();
+            taiwanTime.setHours(taiwanTime.getHours() + 8);  // 將時間調整為台灣時間 (UTC +8)
+            const formattedTaiwanDate = taiwanTime.toISOString().split("T")[0];  // 只取年月日
+
+            const noteData = {
+                id: currentEditId,
+                title: title,
+                content: content,
+                createdAt: formattedTaiwanDate,
+            };
+
+            update(noteRef, noteData).then(() => {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Note updated successfully!',
+                    text: 'Your note has been updated.',
+                }).then(() => {
+                    editNoteModal.hide(); // 隱藏編輯模態框
+                    // 重置表單欄位
+                    document.getElementById("editNoteTitle").value = '';
+                    document.getElementById("editNoteContent").value = '';
+                    fileInput.value = '';  // 清空檔案輸入欄位
+                });
+            }).catch((error) => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error!',
+                    text: 'There was an error updating the note.',
+                }).then(() => {
+                    editNoteModal.hide();
+                });
+            });
+
+            // 清除編輯狀態
+            currentEditId = null;
+        });
 
         // Delete a note
         function deleteNote(id) {
@@ -281,15 +380,6 @@
             });
         });
 
-        // Open the modal to add a new note
-        function openAddModal() {
-            currentEditId = null;
-            noteTitle.value = "";
-            noteContent.value = "";
-            noteModalLabel.innerText = "Add New Note";
-            noteModal.show();
-        }
-
         document.getElementById('logoutBtn').addEventListener('click', () => {
             signOut(auth).then(() => {
                 userId = null;  // 清除使用者 ID
@@ -308,17 +398,6 @@
                     text: error.message,
                 });
             });
-        });
-
-        // Bind showModalBtn event
-        document.getElementById("showModalBtn").addEventListener("click", function () {
-            openAddModal();
-        });
-
-        // 在Firebase初始化之後，新增這段代碼來綁定事件
-        document.getElementById("userIcon").addEventListener("click", function () {
-            // 顯示modal
-            new bootstrap.Modal(document.getElementById("userModal")).show();
         });
 
         const chatContainer = document.getElementById("chatContainer");
@@ -483,7 +562,8 @@
             <div class="col">
                 <!-- User Icon Button -->
                 <div class="d-flex justify-content-end">
-                    <i id="userIcon" class="bi bi-person-circle"></i>
+                    <i type="button" id="userIcon" class="bi bi-person-circle" data-bs-toggle="modal"
+                        data-bs-target="#userModal"></i>
                 </div>
             </div>
         </div>
@@ -514,7 +594,7 @@
                 <input type="text" id="searchInput" class="form-control" placeholder="搜尋筆記" />
             </div>
             <div class="col-md-2 text-end">
-                <button id="showModalBtn" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#noteModal">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#noteModal">
                     add
                 </button>
             </div>
@@ -533,8 +613,9 @@
             <tbody id="notesTable"></tbody>
         </table>
 
+        <!-- add Note Modal -->
         <div class="modal fade" id="noteModal" tabindex="-1" aria-labelledby="noteModalLabel" aria-hidden="true">
-            <div class="modal-dialog">
+            <div class="modal-dialog modal-xl">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title" id="noteModalLabel">新增筆記</h5>
@@ -550,8 +631,45 @@
                                 <label for="noteContent" class="form-label">內容</label>
                                 <textarea id="noteContent" class="form-control" style="height: 200px;"></textarea>
                             </div>
+                            <div class="mb-3">
+                                <label for="noteFileInput" class="form-label">上傳檔案</label>
+                                <input type="file" id="noteFileInput" class="form-control" />
+                            </div>
                             <div class="modal-footer">
                                 <button type="button" id="saveNoteBtn" class="btn btn-primary">保存</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Note Modal -->
+        <div class="modal fade" id="editNoteModal" tabindex="-1" aria-labelledby="editNoteModalLabel"
+            aria-hidden="true">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="editNoteModalLabel">編輯筆記</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form>
+                            <div class="mb-3">
+                                <label for="editNoteTitle" class="form-label">標題</label>
+                                <input type="text" id="editNoteTitle" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <label for="editNoteContent" class="form-label">內容</label>
+                                <textarea id="editNoteContent" class="form-control" style="height: 200px;"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <div id="fileInfo">
+                                    <p id="fileLinkDisplay"></p> <!-- 顯示檔案連結 -->
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" id="updateNoteBtn" class="btn btn-success">更新</button>
                             </div>
                         </form>
                     </div>
